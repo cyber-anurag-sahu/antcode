@@ -251,6 +251,17 @@
                 <!-- User Directory -->
                 <div class="habits-section" style="margin-top: 2rem;">
                     <h3>User Directory</h3>
+
+                    <!-- Search Bar -->
+                    <div style="margin-bottom: 1rem;">
+                        <div style="position: relative; max-width: 400px;">
+                            <i data-lucide="search"
+                                style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: var(--text-secondary); width: 18px; height: 18px;"></i>
+                            <input type="text" id="admin-user-search" placeholder="Search by name or email..."
+                                style="width: 100%; padding: 0.8rem 0.8rem 0.8rem 2.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); outline: none;">
+                        </div>
+                    </div>
+
                     <div class="table-container"
                         style="overflow-x: auto; background: var(--card-bg); border-radius: 16px; border: var(--glass-border); padding: 1rem;">
                         <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
@@ -272,6 +283,70 @@
                             </thead>
                             <tbody id="admin-user-list">
                                 <!-- Users injected here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination Controls -->
+                    <div id="admin-user-pagination"
+                        style="display: flex; align-items: center; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+                        <button id="user-page-prev" class="btn-icon" disabled
+                            style="background: var(--card-bg); border: var(--glass-border);">
+                            <i data-lucide="chevron-left"></i>
+                        </button>
+                        <span id="user-page-info"
+                            style="color: var(--text-secondary); font-variant-numeric: tabular-nums;">
+                            Page 1 of 1
+                        </span>
+                        <button id="user-page-next" class="btn-icon" disabled
+                            style="background: var(--card-bg); border: var(--glass-border);">
+                            <i data-lucide="chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+
+
+                <!-- Referral Manager -->
+                <div class="habits-section" style="margin-top: 2rem;">
+                    <h3>Referral System</h3>
+
+                    <!-- Creator -->
+                    <div
+                        style="background: var(--card-bg); border: var(--glass-border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;">
+                        <h4 style="margin-bottom: 0.5rem; color: var(--text-secondary);">Create New Code</h4>
+                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                            <input type="text" id="admin-ref-code-input" placeholder="Code (e.g. SUMMER25)"
+                                style="flex: 1; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); outline: none; text-transform: uppercase;">
+                            <input type="email" id="admin-ref-email-input" placeholder="Influencer Email"
+                                style="flex: 1; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); outline: none;">
+                            <button id="admin-create-ref-btn" class="btn-primary">Create</button>
+                        </div>
+                    </div>
+
+                    <!-- Chart -->
+                    <div class="chart-card" style="margin-bottom: 1rem;">
+                        <h3>Top Referrers</h3>
+                        <div class="chart-box" style="height: 250px;">
+                            <canvas id="referralChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- List -->
+                    <div class="table-container"
+                        style="overflow-x: auto; background: var(--card-bg); border-radius: 16px; border: var(--glass-border); padding: 1rem;">
+                        <table style="width: 100%; border-collapse: collapse; min-width: 600px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                    <th style="text-align: left; padding: 1rem; color: var(--text-secondary);">Code</th>
+                                    <th style="text-align: left; padding: 1rem; color: var(--text-secondary);">Owner
+                                    </th>
+                                    <th style="text-align: right; padding: 1rem; color: var(--text-secondary);">
+                                        Referrals
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="admin-referral-list">
+                                <!-- Referrals injected here -->
                             </tbody>
                         </table>
                     </div>
@@ -338,6 +413,12 @@
                         style="position: absolute; right: 0.8rem; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
                         <i data-lucide="eye" style="width: 20px; height: 20px;"></i>
                     </button>
+                </div>
+
+                <!-- Referral Code Input (Only for Signup) -->
+                <div id="referral-input-container" style="display: none; width: 100%; margin-bottom: 0.8rem;">
+                    <input type="text" id="signup-referral-code" placeholder="Referral Code (Optional)"
+                        style="width: 100%; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-primary); outline: none; text-transform: uppercase;">
                 </div>
                 <div style="text-align: right; margin-bottom: 1.5rem;">
                     <button id="forgot-password-btn"

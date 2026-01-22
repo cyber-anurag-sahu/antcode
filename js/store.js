@@ -24,7 +24,7 @@ window.Store = {
     },
 
     // NEW: Async Load
-    async load(user) {
+    async load(user, referralCode = null) {
         this.userId = user.uid;
 
         const email = user.email ? user.email.toLowerCase() : '';
@@ -33,7 +33,8 @@ window.Store = {
         console.log("Admin Check:", email, this.ADMIN_EMAILS, "Result:", this.isAdmin);
 
         // Sync User Doc (for Admin Directory) - Await to ensure creation
-        await this.updateUserRegistry(user);
+        // Pass referralCode if present (only used if new user)
+        await this.updateUserRegistry(user, referralCode);
         this.startUserHeartbeat(user);
 
         return await this.refresh();
@@ -161,16 +162,51 @@ window.Store = {
 
     // --- Admin Features ---
 
-    async updateUserRegistry(user) {
+    async checkUserExists(uid) {
+        try {
+            const doc = await db.collection('users').doc(uid).get();
+            return doc.exists;
+        } catch (e) {
+            console.error("Check user failed", e);
+            return false; // Assume new or error safe
+        }
+    },
+
+    async updateUserRegistry(user, referralCode = null) {
         if (!user) return;
         try {
-            // Ensure the parent doc users/{uid} exists so we can list it
-            await db.collection('users').doc(user.uid).set({
+            const userRef = db.collection('users').doc(user.uid);
+
+            // Check if user exists to prevent overwriting 'referredBy' on subsequent logins
+            const doc = await userRef.get();
+            const dataToUpdate = {
                 email: user.email,
                 displayName: user.displayName || 'User',
                 photoURL: user.photoURL || null,
                 lastActive: new Date().toISOString()
-            }, { merge: true });
+            };
+
+            if (!doc.exists) {
+                // New User
+                if (referralCode) {
+                    // Normalize code
+                    referralCode = referralCode.toUpperCase().trim();
+
+                    // Validate Code Existence
+                    const codeRef = db.collection('referralCodes').doc(referralCode);
+                    const codeDoc = await codeRef.get();
+
+                    if (codeDoc.exists) {
+                        dataToUpdate.referredBy = referralCode;
+                        // Increment Counter
+                        codeRef.update({
+                            count: firebase.firestore.FieldValue.increment(1)
+                        });
+                    }
+                }
+            }
+
+            await userRef.set(dataToUpdate, { merge: true });
             console.log("Registry sync success");
         } catch (e) {
             console.error("Registry sync failed", e);
@@ -257,6 +293,63 @@ window.Store = {
             return habits;
         } catch (e) {
             console.error("Admin: Get User Habits failed", e);
+            return [];
+        }
+    },
+
+    // --- Referral System ---
+
+    async createReferralCode(code, ownerEmail) {
+        if (!this.isAdmin) return { success: false, message: "Unauthorized" };
+
+        code = code.toUpperCase().trim();
+        if (code.length < 3) return { success: false, message: "Code too short" };
+
+        try {
+            // 1. Check if code exists
+            const codeDoc = await db.collection('referralCodes').doc(code).get();
+            if (codeDoc.exists) return { success: false, message: "Code already exists" };
+
+            // 2. Resolve Email to UID
+            let ownerUid = null;
+            let ownerName = 'Unknown';
+
+            const userSnapshot = await db.collection('users').where('email', '==', ownerEmail).limit(1).get();
+            if (userSnapshot.empty) {
+                return { success: false, message: "User email not found in registry" };
+            }
+
+            const userDoc = userSnapshot.docs[0];
+            ownerUid = userDoc.id;
+            ownerName = userDoc.data().displayName || 'User';
+
+            // 3. Create Code
+            await db.collection('referralCodes').doc(code).set({
+                ownerUid: ownerUid,
+                ownerName: ownerName,
+                createdAt: new Date().toISOString(),
+                count: 0
+            });
+
+            return { success: true, message: `Code ${code} created for ${ownerName}` };
+
+        } catch (e) {
+            console.error("Create Referral Failed", e);
+            return { success: false, message: e.message };
+        }
+    },
+
+    async getReferralStats() {
+        if (!this.isAdmin) return [];
+        try {
+            const snap = await db.collection('referralCodes').get();
+            const stats = [];
+            snap.forEach(doc => {
+                stats.push({ code: doc.id, ...doc.data() });
+            });
+            return stats;
+        } catch (e) {
+            console.error("Get Referral Stats Failed", e);
             return [];
         }
     },

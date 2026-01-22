@@ -39,7 +39,10 @@ const App = {
                 }
 
                 // Load Data
-                const success = await Store.load(user);
+                const success = await Store.load(user, this.pendingReferralCode);
+                // Clear after use
+                this.pendingReferralCode = null;
+
                 if (success) {
                     this.render();
                     Charts.render();
@@ -207,14 +210,18 @@ const App = {
         if (this.dom.authToggleBtn) {
             this.dom.authToggleBtn.addEventListener('click', () => {
                 this.isLoginMode = !this.isLoginMode;
+                // Toggle Referral Input
+                const refContainer = document.getElementById('referral-input-container');
                 if (this.isLoginMode) {
                     this.dom.emailAuthBtn.textContent = "Log In";
                     this.dom.authToggleText.textContent = "Don't have an account?";
                     this.dom.authToggleBtn.textContent = "Sign Up";
+                    if (refContainer) refContainer.style.display = 'none';
                 } else {
                     this.dom.emailAuthBtn.textContent = "Sign Up";
                     this.dom.authToggleText.textContent = "Already have an account?";
                     this.dom.authToggleBtn.textContent = "Log In";
+                    if (refContainer) refContainer.style.display = 'block';
                 }
             });
         }
@@ -223,6 +230,7 @@ const App = {
             this.dom.emailAuthBtn.addEventListener('click', () => {
                 const email = this.dom.emailInput.value.trim();
                 const password = this.dom.passwordInput.value;
+                const referralCode = document.getElementById('signup-referral-code') ? document.getElementById('signup-referral-code').value.trim() : null;
 
                 if (!email || !password) {
                     alert("Please enter both email and password.");
@@ -251,6 +259,9 @@ const App = {
                 if (this.isLoginMode) {
                     auth.signInWithEmailAndPassword(email, password).catch(handleError);
                 } else {
+                    // Sign Up Flow
+                    // Store code in a temp var for the AuthListener to pick up or handle explicitly
+                    this.pendingReferralCode = referralCode;
                     auth.createUserWithEmailAndPassword(email, password).catch(handleError);
                 }
             });
@@ -461,12 +472,23 @@ const App = {
         // Visual Feedback
         this.dom.adminUserList.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">Connecting to Real-time Stream...</td></tr>';
 
+        // Init Pagination State
+        this.pagination = {
+            currentPage: 1,
+            itemsPerPage: 7,
+            allUsers: [],
+            searchQuery: ''
+        };
+
         // Subscribe
         this.adminUnsub = Store.subscribeToUsers(
             (users) => {
                 console.log("Admin: Received", users.length, "users");
 
-                // Stats
+                // Update State
+                this.pagination.allUsers = users;
+
+                // Stats (Calc on full list)
                 const total = users.length;
                 const activeThreshold = new Date();
                 activeThreshold.setHours(activeThreshold.getHours() - 24);
@@ -482,54 +504,27 @@ const App = {
                 this.dom.adminTotalUsers.textContent = total;
                 this.dom.adminActiveUsers.textContent = activeCount;
 
-                // Table Render
-                this.dom.adminUserList.innerHTML = users.map(u => {
-                    const lastActive = safeDate(u.lastActive);
-                    const lastActiveStr = lastActive.getFullYear() === 1970 ? 'Never' : lastActive.toLocaleDateString() + ' ' + lastActive.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    return `
-                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-                        <td style="padding: 1rem; display: flex; align-items: center; gap: 0.75rem;">
-                            <img src="${u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName || 'User'}&background=6366f1&color=fff`}" 
-                                 style="width: 32px; height: 32px; border-radius: 50%;">
-                            <span>${u.displayName || 'Unknown'}</span>
-                        </td>
-                        <td style="padding: 1rem; color: var(--text-secondary);">${u.email || 'No Email'}</td>
-                        <td style="padding: 1rem; color: var(--text-secondary);">${lastActiveStr}</td>
-                        <td style="padding: 1rem; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem;">
-                             <button class="btn-icon inspect-btn" data-uid="${u.uid}" data-name="${u.displayName}" title="View Habits" style="background: rgba(255,255,255,0.1);">
-                                <i data-lucide="eye" style="width: 16px; height: 16px;"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `}).join('');
-
-                lucide.createIcons();
-                this.bindAdminDynamicEvents();
+                // Render Current Page
+                this.renderUserTable();
 
                 // Setup Bulk Email
                 if (this.dom.adminEmailBtn) {
                     this.dom.adminEmailBtn.onclick = () => {
-                        // Gather all emails, filter out empty ones
                         const emails = users
                             .map(u => u.email)
                             .filter(e => e && e.includes('@'))
                             .join(',');
-
-                        // Open default mail client with BCC (to hide emails from each other)
                         window.location.href = `mailto:?bcc=${emails}&subject=Update from Orbit`;
                     };
                 }
             },
             (error) => {
-                // Error Display
                 this.dom.adminUserList.innerHTML = `
                     <tr>
                         <td colspan="4" style="text-align:center; padding:2rem; color:var(--danger);">
                             <i data-lucide="alert-triangle" style="margin-bottom:0.5rem;"></i><br>
                             <strong>Connection Error</strong><br>
                             ${error.message}<br>
-                            <span style="font-size:0.8rem; opacity:0.8;">Check Firebase Console > Firestore > Rules</span>
                         </td>
                     </tr>`;
                 lucide.createIcons();
@@ -547,6 +542,119 @@ const App = {
                 this.renderAdmin(); // Re-connect
             };
         }
+
+        // Setup Search Listener
+        const searchInput = document.getElementById('admin-user-search');
+        if (searchInput && !searchInput.dataset.listening) {
+            searchInput.dataset.listening = "true"; // Prevent double bind
+            searchInput.addEventListener('input', (e) => {
+                this.pagination.searchQuery = e.target.value.toLowerCase().trim();
+                this.pagination.currentPage = 1; // Reset to first page
+                this.renderUserTable();
+            });
+        }
+
+        // Setup Pagination Listeners (One-time bind check)
+        if (!this.paginationInitialized) {
+            const prevBtn = document.getElementById('user-page-prev');
+            const nextBtn = document.getElementById('user-page-next');
+
+            if (prevBtn) {
+                prevBtn.onclick = () => {
+                    if (this.pagination.currentPage > 1) {
+                        this.pagination.currentPage--;
+                        this.renderUserTable();
+                    }
+                };
+            }
+            if (nextBtn) {
+                nextBtn.onclick = () => {
+                    // Start: Recalculate Max Page based on filtered list
+                    const filtered = this.getFilteredUsers();
+                    const maxPage = Math.ceil(filtered.length / this.pagination.itemsPerPage);
+                    // End: Recalculate
+
+                    if (this.pagination.currentPage < maxPage) {
+                        this.pagination.currentPage++;
+                        this.renderUserTable();
+                    }
+                };
+            }
+            this.paginationInitialized = true;
+        }
+    },
+
+    getFilteredUsers() {
+        const { allUsers, searchQuery } = this.pagination;
+        if (!searchQuery) return allUsers;
+
+        return allUsers.filter(u => {
+            const email = (u.email || '').toLowerCase();
+            const name = (u.displayName || '').toLowerCase();
+            return email.includes(searchQuery) || name.includes(searchQuery);
+        });
+    },
+
+    renderUserTable() {
+        const { currentPage, itemsPerPage } = this.pagination;
+
+        // Filter first
+        const pageUsersFull = this.getFilteredUsers();
+
+        const total = pageUsersFull.length;
+        const totalPages = Math.ceil(total / itemsPerPage) || 1;
+
+        // Ensure Page Validity
+        if (currentPage > totalPages) this.pagination.currentPage = totalPages;
+        // Also if we reset search and currentPage was 1 but effectively 0 because empty.. just ensure >= 1
+        if (this.pagination.currentPage < 1) this.pagination.currentPage = 1;
+
+        const start = (this.pagination.currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageUsers = pageUsersFull.slice(start, end);
+
+        // Update Table
+        const safeDate = (d) => {
+            const date = new Date(d);
+            return isNaN(date.getTime()) ? new Date(0) : date;
+        };
+
+        if (pageUsers.length === 0) {
+            this.dom.adminUserList.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:2rem; color:var(--text-secondary);">No matching users found.</td></tr>';
+        } else {
+            this.dom.adminUserList.innerHTML = pageUsers.map(u => {
+                const lastActive = safeDate(u.lastActive);
+                const lastActiveStr = lastActive.getFullYear() === 1970 ? 'Never' : lastActive.toLocaleDateString() + ' ' + lastActive.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                return `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <td style="padding: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+                        <img src="${u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName || 'User'}&background=6366f1&color=fff`}"
+                             style="width: 32px; height: 32px; border-radius: 50%;">
+                        <span>${u.displayName || 'Unknown'}</span>
+                    </td>
+                    <td style="padding: 1rem; color: var(--text-secondary);">${u.email || 'No Email'}</td>
+                    <td style="padding: 1rem; color: var(--text-secondary);">${lastActiveStr}</td>
+                    <td style="padding: 1rem; text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem;">
+                         <button class="btn-icon inspect-btn" data-uid="${u.uid}" data-name="${u.displayName}" title="View Habits" style="background: rgba(255,255,255,0.1);">
+                            <i data-lucide="eye" style="width: 16px; height: 16px;"></i>
+                        </button>
+                    </td>
+                </tr>
+            `}).join('');
+        }
+
+        lucide.createIcons();
+        this.bindAdminDynamicEvents();
+
+        // Update Pagination Controls
+        const prevBtn = document.getElementById('user-page-prev');
+        const nextBtn = document.getElementById('user-page-next');
+        const info = document.getElementById('user-page-info');
+
+        if (info) info.textContent = `Page ${this.pagination.currentPage} of ${totalPages} (${total} total)`;
+        if (prevBtn) prevBtn.disabled = this.pagination.currentPage === 1;
+        if (nextBtn) nextBtn.disabled = this.pagination.currentPage === totalPages;
 
         // Setup Manual Add Button
         const addUserBtn = document.getElementById('admin-add-user-btn');
@@ -568,6 +676,96 @@ const App = {
                     alert("Error creating user: " + e.message);
                 }
             };
+        }
+
+        // --- Referral Manager Logic Main ---
+        const createRefBtn = document.getElementById('admin-create-ref-btn');
+        if (createRefBtn) {
+            createRefBtn.onclick = async () => {
+                const code = document.getElementById('admin-ref-code-input').value;
+                const email = document.getElementById('admin-ref-email-input').value;
+
+                if (!code || !email) {
+                    alert("Please enter both Code and Email");
+                    return;
+                }
+
+                const res = await Store.createReferralCode(code, email);
+                if (res.success) {
+                    alert(res.message);
+                    this.renderReferralStats(); // Refresh
+                } else {
+                    alert("Error: " + res.message);
+                }
+            };
+        }
+
+        // Initial Render of Stats
+        this.renderReferralStats();
+    },
+
+    async renderReferralStats() {
+        const stats = await Store.getReferralStats();
+        const tbody = document.getElementById('admin-referral-list');
+        const canvas = document.getElementById('referralChart');
+
+        // Table
+        if (tbody) {
+            tbody.innerHTML = stats.map(s => `
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <td style="padding: 1rem; font-weight: bold; color: var(--accent);">${s.code}</td>
+                    <td style="padding: 1rem; color: var(--text-secondary);">${s.ownerName}</td>
+                    <td style="padding: 1rem; text-align: right; font-weight: bold;">${s.count}</td>
+                </tr>
+            `).join('');
+
+            if (stats.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center; padding:1rem; color: var(--text-secondary);">No referral codes active.</td></tr>`;
+            }
+        }
+
+        // Chart
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+
+            // Sort by count desc
+            stats.sort((a, b) => b.count - a.count);
+
+            // Destroy old chart if exists to avoid overlay
+            if (this.referralChartInstance) {
+                this.referralChartInstance.destroy();
+            }
+
+            this.referralChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: stats.map(s => s.code),
+                    datasets: [{
+                        label: 'Referrals',
+                        data: stats.map(s => s.count),
+                        backgroundColor: '#6366f1',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#9ca3af', stepSize: 1 }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9ca3af' }
+                        }
+                    }
+                }
+            });
         }
     },
 
