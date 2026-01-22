@@ -144,15 +144,7 @@ const App = {
 
 
 
-        if (this.dom.loginBtn) {
-            this.dom.loginBtn.addEventListener('click', () => {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                auth.signInWithPopup(provider).catch(error => {
-                    console.error("Login failed:", error);
-                    alert("Login failed: " + error.message);
-                });
-            });
-        }
+
 
         // --- Tabs Logic ---
         if (this.dom.tabEmail && this.dom.tabPhone) {
@@ -175,15 +167,7 @@ const App = {
             });
         }
 
-        if (this.dom.loginBtn) {
-            this.dom.loginBtn.addEventListener('click', () => {
-                const provider = new firebase.auth.GoogleAuthProvider();
-                auth.signInWithPopup(provider).catch(error => {
-                    console.error("Login failed:", error);
-                    alert("Login failed: " + error.message);
-                });
-            });
-        }
+
 
         // --- Tabs Logic ---
         if (this.dom.tabEmail && this.dom.tabPhone) {
@@ -310,6 +294,7 @@ const App = {
         // --- Google Login ---
         if (this.dom.loginBtn) {
             this.dom.loginBtn.addEventListener('click', () => {
+                const provider = new firebase.auth.GoogleAuthProvider();
                 auth.signInWithPopup(provider).catch(err => {
                     console.error("Google Login failed", err);
                     alert("Login failed: " + err.message);
