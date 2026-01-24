@@ -1,0 +1,64 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    
+    // Check if user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if user is accessing their own data
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Check if user is an Admin (matches the email in store.js)
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == 'sahuanurag2109@gmail.com');
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Users Collection
+    // Users can read/write their own profile. Admins can read/write all.
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+
+      // Subcollections: habits, transactions, meta
+      match /habits/{habitId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+      match /transactions/{transId} {
+         allow read, write: if isOwner(userId) || isAdmin();
+      }
+      match /meta/{docId} {
+         allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // 2. Referral Codes
+    // Anyone logged in can read codes (to validate) and update count (used in signup).
+    // Only Admins can create new codes.
+    match /referralCodes/{code} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update: if isAuthenticated(); // Needed for incrementing count on signup
+      allow delete: if isAdmin();
+    }
+
+    // 3. Global Settings (Announcements)
+    // Everyone (auth) can read. Only Admin can write.
+    match /settings/global {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false; 
+    }
+  }
+}
